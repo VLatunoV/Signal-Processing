@@ -26,3 +26,12 @@
 *.exe
 *.out
 *.app
+
+# Solution files
+*.sln
+*.sdf
+*.vcxproj*
+*.VC*
+Debug/
+x64/
+.*/

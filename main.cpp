@@ -9,7 +9,9 @@
 using namespace std;
 
 DFT dft;
+FFT fft;
 size_t N;
+size_t P;
 double* nums = nullptr;
 double* reconstructed = nullptr;
 double reconstruct_samples;
@@ -225,9 +227,11 @@ void SetVSync(bool sync)
 }
 void Initialize()
 {
-	N = 256;
-	reconstruct_samples = 1;
+	P = 8;
+	N = (size_t)1 << P;
+	reconstruct_samples = 4;
 	dft.Initialize(N);
+	fft.Initialize(P);
 	nums = new double[N]();
 	reconstructed = new double[reconstruct_samples*N]();
 	size_t half = N / 2;
@@ -240,10 +244,12 @@ void Initialize()
 		//nums[i] = sqrt(t) * 20;// +sin(34 * t / rad) * 30;
 		nums[i] = 100 * ((i * 8 / N) % 2);
 	}
-	result = dft.Transform(nums);
+	result = new Complex[N];
+	//dft.Transform(nums, result);
+	fft.Transform(nums, result);
 	for (size_t i = 0; i < half; ++i)
 	{
-		amp[i] = result[i].mod() * 2 / (double)N;
+		amp[i] = result[i].mod() * 2;
 		phase[i] = result[i].arg();
 	}
 	for (size_t i = 0; i < reconstruct_samples*N; ++i)

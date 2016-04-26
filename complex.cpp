@@ -24,21 +24,29 @@ Complex Complex::operator/ (const double& scale) const
 {
 	return Complex(Re / scale, Im / scale);
 }
-Complex Complex::operator+ (const Complex& orig) const
+Complex& Complex::operator*= (const double& scale)
 {
-	return Complex(Re + orig.Re, Im + orig.Im);
+	return *this = Complex(Re * scale, Im * scale);
 }
-Complex Complex::operator- (const Complex& orig) const
+Complex& Complex::operator/= (const double& scale)
 {
-	return Complex(Re - orig.Re, Im - orig.Im);
+	return *this = Complex(Re / scale, Im / scale);
 }
-Complex Complex::operator* (const Complex& orig) const
+Complex Complex::operator+ (const Complex& other) const
 {
-	return Complex(Re*orig.Re - Im*orig.Im, Re*orig.Im + Im*orig.Re);
+	return Complex(Re + other.Re, Im + other.Im);
 }
-Complex Complex::operator/ (const Complex& orig) const
+Complex Complex::operator- (const Complex& other) const
 {
-	return *this * orig.conjugate() / orig.mod_sqr();
+	return Complex(Re - other.Re, Im - other.Im);
+}
+Complex Complex::operator* (const Complex& other) const
+{
+	return Complex(Re*other.Re - Im*other.Im, Re*other.Im + Im*other.Re);
+}
+Complex Complex::operator/ (const Complex& other) const
+{
+	return *this * other.conjugate() / other.mod_sqr();
 }
 Complex Complex::operator^ (const size_t& power) const
 {
@@ -50,21 +58,21 @@ Complex Complex::operator^ (const size_t& power) const
 	else
 		return p * p;
 }
-Complex& Complex::operator+= (const Complex& orig)
+Complex& Complex::operator+= (const Complex& other)
 {
-	return *this = Complex(Re + orig.Re, Im + orig.Im);
+	return *this = Complex(Re + other.Re, Im + other.Im);
 }
-Complex& Complex::operator-= (const Complex& orig)
+Complex& Complex::operator-= (const Complex& other)
 {
-	return *this = Complex(Re - orig.Re, Im - orig.Im);
+	return *this = Complex(Re - other.Re, Im - other.Im);
 }
-Complex& Complex::operator*= (const Complex& orig)
+Complex& Complex::operator*= (const Complex& other)
 {
-	return *this = Complex(Re*orig.Re - Im*orig.Im, Re*orig.Im + Im*orig.Re);
+	return *this = Complex(Re*other.Re - Im*other.Im, Re*other.Im + Im*other.Re);
 }
-Complex& Complex::operator/= (const Complex& orig)
+Complex& Complex::operator/= (const Complex& other)
 {
-	return *this = *this * orig.conjugate() / orig.mod_sqr();
+	return *this = *this * other.conjugate() / other.mod_sqr();
 }
 Complex& Complex::operator^= (const size_t& power)
 {

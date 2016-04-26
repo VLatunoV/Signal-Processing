@@ -14,6 +14,8 @@ struct Complex
 	Complex operator- () const;
 	Complex operator* (const double&) const;
 	Complex operator/ (const double&) const;
+	Complex& operator*= (const double&);
+	Complex& operator/= (const double&);
 	Complex operator+ (const Complex&) const;
 	Complex operator- (const Complex&) const;
 	Complex operator* (const Complex&) const;

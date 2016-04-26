@@ -3,13 +3,30 @@
 
 class DFT
 {
-	Complex* coeff;
-	size_t N;
 	DFT(const DFT&);
 	DFT& operator= (const DFT&);
+protected:
+	Complex* coeff;
+	size_t N;
 public:
-	DFT() : coeff(nullptr), N(0){}
+	DFT();
 	~DFT();
 	void Initialize(size_t);
-	Complex* Transform(double*);
+	void Transform(const double*, Complex*) const;
+};
+
+class FFT : public DFT
+{
+	FFT(const FFT&);
+	FFT& operator= (const FFT&);
+protected:
+	size_t p;
+	Complex* working;
+
+	void _transform(const double*, size_t, size_t, Complex*, Complex*);
+public:
+	FFT();
+	~FFT();
+	void Initialize(size_t);
+	void Transform(const double*, Complex*);
 };

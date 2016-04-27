@@ -28,7 +28,6 @@ void DFT::Transform(const double* arr, Complex* result) const
 		result[i] /= N;
 	}
 }
-
 FFT::FFT(): DFT(), p(0), working(nullptr){}
 FFT::~FFT()
 {

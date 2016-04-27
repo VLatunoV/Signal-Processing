@@ -5,9 +5,11 @@
 #include <iostream>
 #include <thread>
 #include "fourier.h"
+#include "audio_layer.h"
 
 using namespace std;
 
+AudioLayer::CaptureEndpoint* MyMicrophone;
 DFT dft;
 FFT fft;
 size_t N;
@@ -15,6 +17,8 @@ size_t P;
 double* nums = nullptr;
 double* reconstructed = nullptr;
 double reconstruct_samples;
+double* amp;
+double* phase;
 Complex* result = nullptr;
 
 HINSTANCE hInstance;
@@ -58,8 +62,15 @@ int main(int argc, char** argv)
 	CreateOGLWindow(width, height, fullscreen);
 	EnableOpenGL(hWnd, &hDC, &hRC);
 
-	DrawGL();
-	SwapBuffers(hDC);
+	BYTE* sound;
+	double* input;
+	UINT32 length = MyMicrophone->GetWaveFormat()->nAvgBytesPerSec / 1000;
+	MyMicrophone->Start();
+	result = new Complex[length];
+	amp = new double[length / 2];
+	phase = new double[length / 2];
+	input = new double[length * 2];
+	
 	while (!bQuit)
 	{
 		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
@@ -78,10 +89,19 @@ int main(int argc, char** argv)
 		{
 			if (!bQuit)
 			{
-				/*
+				MyMicrophone->Capture(10, sound, length);
+				for (size_t i = 0; i < length / 4; ++i)
+				{
+					input[i] = (double)(((float*)sound)[i * 4]);
+				}
+				dft.Transform(input, result);
+				for (UINT32 i = 0; i < length / 2; i += N)
+				{
+					amp[i] = result[i].mod() * 2;
+					phase[i] = result[i].arg();
+				}
 				DrawGL();
 				SwapBuffers(hDC);
-				*/
 			}
 			if (keys[VK_ESCAPE])
 			{
@@ -229,20 +249,26 @@ void Initialize()
 {
 	P = 8;
 	N = (size_t)1 << P;
-	reconstruct_samples = 4;
+	reconstruct_samples = 1;
 	dft.Initialize(N);
 	fft.Initialize(P);
+	AudioLayer::Initialize();
+	
+	MyMicrophone = AudioLayer::GetDefaultCaptureEndpoint();
+	MyMicrophone->Initialize(10);
 	nums = new double[N]();
-	reconstructed = new double[reconstruct_samples*N]();
+	reconstructed = new double[N]();
 	size_t half = N / 2;
-	double* amp = new double[half];
-	double* phase = new double[half];
-	double t = 0;
+	//double* amp = new double[half];
+	//double* phase = new double[half];
+	/*double t = 0;
+	srand(time(0));
 	for (size_t i = 0; i < N; ++i, t += 0.6) // Input signal
 	{
 		//nums[i] = sin(30 * (t / rad)) * 100 + sin(17 * t / rad) * 60 + cos(25 * t / rad) * 75;
-		//nums[i] = sqrt(t) * 20;// +sin(34 * t / rad) * 30;
-		nums[i] = 100 * ((i * 8 / N) % 2);
+		nums[i] = sqrt(t) * 30;// +sin(34 * t / rad) * 30;
+		//nums[i] = 100 * ((i * 8 / N) % 2);
+		//nums[i] = rand() % 100;
 	}
 	result = new Complex[N];
 	//dft.Transform(nums, result);
@@ -252,16 +278,16 @@ void Initialize()
 		amp[i] = result[i].mod() * 2;
 		phase[i] = result[i].arg();
 	}
-	for (size_t i = 0; i < reconstruct_samples*N; ++i)
+	for (size_t i = 0; i < N; ++i)
 	{
 		reconstructed[i] += amp[0] * 0.5;
 		for (size_t j = 1; j < half; ++j)
 		{
-			reconstructed[i] += amp[j] * cos((double)i/ reconstruct_samples * j * 2 * pi / N + phase[j]);
+			reconstructed[i] += amp[j] * cos((double)i * j * 2 * pi / N + phase[j]);
 		}
 	}
 	delete[] amp;
-	delete[] phase;
+	delete[] phase;*/
 }
 void DrawGL()
 {
@@ -284,12 +310,14 @@ void DrawGL()
 		glVertex2d(x * scale * 2 + width / 2, result[i].mod() / 100.0);
 	}
 	glEnd();
+	/*
 	x = -(double)N / 2.0;
 	glColor3f(1, 0, 1);
 	glBegin(GL_LINE_STRIP);
-	for (size_t i = 0; i < reconstruct_samples*N; ++i, x += 1.0 / reconstruct_samples)
+	for (size_t i = 0; i < N; ++i, x += 1.0)
 	{
 		glVertex2d(x * scale, reconstructed[i]);
 	}
 	glEnd();
+	*/
 }

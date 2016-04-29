@@ -20,6 +20,8 @@ double reconstruct_samples;
 double* amp;
 double* phase;
 Complex* result = nullptr;
+double* input;
+BYTE* sound;
 
 HINSTANCE hInstance;
 HWND hWnd;
@@ -62,14 +64,14 @@ int main(int argc, char** argv)
 	CreateOGLWindow(width, height, fullscreen);
 	EnableOpenGL(hWnd, &hDC, &hRC);
 
-	BYTE* sound;
-	double* input;
-	UINT32 length = MyMicrophone->GetWaveFormat()->nAvgBytesPerSec / 1000;
+
+	UINT32 length = N * 4;
 	MyMicrophone->Start();
-	result = new Complex[length];
-	amp = new double[length / 2];
-	phase = new double[length / 2];
-	input = new double[length * 2];
+	sound = new BYTE[length]();
+	result = new Complex[length / 4];
+	amp = new double[length / 8];
+	phase = new double[length / 8];
+	input = new double[length / 4]();
 	
 	while (!bQuit)
 	{
@@ -89,17 +91,19 @@ int main(int argc, char** argv)
 		{
 			if (!bQuit)
 			{
-				MyMicrophone->Capture(10, sound, length);
+				UINT32 timeInterval = N * 1000 / MyMicrophone->GetWaveFormat()->nSamplesPerSec;
+				MyMicrophone->Capture(timeInterval, sound);
 				for (size_t i = 0; i < length / 4; ++i)
 				{
-					input[i] = (double)(((float*)sound)[i * 4]);
+					input[i] = (double)(((float*)sound)[i]);
 				}
-				dft.Transform(input, result);
-				for (UINT32 i = 0; i < length / 2; i += N)
+				
+				fft.Transform(input, result);
+				/*for (UINT32 i = 0; i < N / 2; ++i)
 				{
 					amp[i] = result[i].mod() * 2;
 					phase[i] = result[i].arg();
-				}
+				}*/
 				DrawGL();
 				SwapBuffers(hDC);
 			}
@@ -109,6 +113,7 @@ int main(int argc, char** argv)
 			}
 		}
 	}
+	MyMicrophone->Stop();
 	DisableOpenGL(hWnd, hDC, hRC);
 	DestroyWindow(hWnd);
 	return msg.wParam;
@@ -185,9 +190,15 @@ void EnableOpenGL(HWND hWnd, HDC *hDC, HGLRC *hRC)
 }
 void DisableOpenGL(HWND hWnd, HDC hDC, HGLRC hRC)
 {
-	delete[] nums;
-	delete[] reconstructed;
-	delete[] result;
+	//delete[] nums;
+	//delete[] reconstructed;
+	/*delete[] result;
+	delete[] amp;
+	delete[] phase;
+	delete[] input;
+	delete[] sound;
+	delete MyMicrophone;*/
+	AudioLayer::Cleanup();
 	wglMakeCurrent(NULL, NULL);
 	wglDeleteContext(hRC);
 	ReleaseDC(hWnd, hDC);
@@ -247,17 +258,17 @@ void SetVSync(bool sync)
 }
 void Initialize()
 {
-	P = 8;
+	P = 11;
 	N = (size_t)1 << P;
 	reconstruct_samples = 1;
-	dft.Initialize(N);
+	//dft.Initialize(N);
 	fft.Initialize(P);
 	AudioLayer::Initialize();
 	
 	MyMicrophone = AudioLayer::GetDefaultCaptureEndpoint();
-	MyMicrophone->Initialize(10);
-	nums = new double[N]();
-	reconstructed = new double[N]();
+	MyMicrophone->Initialize(N * 1000 / MyMicrophone->GetWaveFormat()->nSamplesPerSec);
+	//nums = new double[N]();
+	//reconstructed = new double[N]();
 	size_t half = N / 2;
 	//double* amp = new double[half];
 	//double* phase = new double[half];
@@ -295,19 +306,26 @@ void DrawGL()
 	glLoadIdentity();
 	double x = -(double)N / 2.0;
 	double scale = (double)width / (double)N;
-	glColor3f(0, 1, 0);
+	/*glColor3f(0, 1, 0);
 	glBegin(GL_LINE_STRIP);
 	for (size_t i = 0; i < N; ++i, x += 1)
 	{
-		glVertex2d(x * scale, nums[i]);
+	glVertex2d(x * scale, nums[i]);
 	}
-	glEnd();
+	glEnd();*/
+	/*glColor3f(0, 1, 0);
+	glBegin(GL_LINE_STRIP);
+	for (size_t i = 0; i < N; ++i, x += 1)
+	{
+		glVertex2d(x * scale, input[i] * 150);
+	}
+	glEnd();*/
 	x = -(double)N / 2.0;
 	glColor3f(0, 0.6, 1);
 	glBegin(GL_LINE_STRIP);
 	for (size_t i = 0; i < N / 2; ++i, x += 1)
 	{
-		glVertex2d(x * scale * 2 + width / 2, result[i].mod() / 100.0);
+		glVertex2d(x * scale * 2 + width / 2, result[i].mod() * 5000);
 	}
 	glEnd();
 	/*

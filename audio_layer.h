@@ -67,7 +67,7 @@ namespace AudioLayer
 		CaptureEndpoint() : AudioEndpoint(), pICaptureClient(nullptr) {}
 		~CaptureEndpoint();
 		void Initialize(UINT32);
-		void Capture(UINT32, BYTE*&, UINT32&);
+		void Capture(UINT32, BYTE*);
 	};
 
 	class RenderEndpoint : public AudioEndpoint

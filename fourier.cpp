@@ -42,6 +42,11 @@ void FFT::Initialize(size_t p)
 }
 void FFT::Transform(const double* arr, Complex* result)
 {
+	if (N == 1)
+	{
+		result[0] = Complex(arr[0], 0);
+		return;
+	}
 	_transform(arr, N, 1, result, working);
 	for (size_t i = 0; i < N; ++i)
 	{
@@ -50,11 +55,6 @@ void FFT::Transform(const double* arr, Complex* result)
 }
 void FFT::_transform(const double* arr, size_t size, size_t stride, Complex* result, Complex* working)
 {
-	if (size == 1)
-	{
-		result[0] = Complex(arr[0], 0);
-		return;
-	}
 	if (size == 2)
 	{
 		result[0].Re = (arr[0] + arr[stride]);

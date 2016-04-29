@@ -108,7 +108,7 @@ namespace AudioLayer
 		AudioEndpoint::Initialize(timeInterval);
 		this->pIAudioClient->GetService(__uuidof(IAudioCaptureClient), (void**)&this->pICaptureClient);
 	}
-	void CaptureEndpoint::Capture(UINT32 milliseconds, BYTE*& outBuffer, UINT32& size)
+	void CaptureEndpoint::Capture(UINT32 milliseconds, BYTE* outBuffer)
 	{
 		BYTE* pBegin;
 		BYTE* readFrom;
@@ -116,9 +116,7 @@ namespace AudioLayer
 		UINT32 framesAvailable;
 		UINT32 framesRequest;
 		DWORD flags;
-
-		size = framesToRead * pWF->nBlockAlign;
-		outBuffer = new BYTE[size];
+		
 		pBegin = outBuffer;
 
 		while (framesToRead)

@@ -22,7 +22,7 @@ double* phase;
 Complex* result = nullptr;
 double* input;
 BYTE* sound;
-
+bool test;
 HINSTANCE hInstance;
 HWND hWnd;
 HDC hDC;
@@ -62,16 +62,31 @@ int main(int argc, char** argv)
 	RegisterClass(&wc);
 	GetMonitorParameters(MonitorX, MonitorY);
 	CreateOGLWindow(width, height, fullscreen);
+
+	test = false;
+	P = 10;
+	N = (size_t)1 << P;
+
 	EnableOpenGL(hWnd, &hDC, &hRC);
 
+	UINT32 length = N;
+	UINT32 timeInterval;
+	if (!test)
+	{
 
-	UINT32 length = N * 4;
-	MyMicrophone->Start();
-	sound = new BYTE[length]();
-	result = new Complex[length / 4];
-	amp = new double[length / 8];
-	phase = new double[length / 8];
-	input = new double[length / 4]();
+		fft.Initialize(P);
+		AudioLayer::Initialize();
+		MyMicrophone = AudioLayer::GetDefaultCaptureEndpoint();
+		timeInterval = N * 1000 / MyMicrophone->GetWaveFormat()->nSamplesPerSec;
+		MyMicrophone->Initialize(timeInterval);
+	
+		MyMicrophone->Start();
+		sound = new BYTE[length * 8]();
+		result = new Complex[length];
+		amp = new double[length / 2];
+		phase = new double[length / 2];
+		input = new double[length]();
+	}
 	
 	while (!bQuit)
 	{
@@ -91,19 +106,30 @@ int main(int argc, char** argv)
 		{
 			if (!bQuit)
 			{
-				UINT32 timeInterval = N * 1000 / MyMicrophone->GetWaveFormat()->nSamplesPerSec;
-				MyMicrophone->Capture(timeInterval, sound);
-				for (size_t i = 0; i < length / 4; ++i)
+				if(!test)
 				{
-					input[i] = (double)(((float*)sound)[i]);
-				}
+					MyMicrophone->Capture(timeInterval, sound);
+					for (size_t i = 0; i < length; i += 1)
+					{
+						input[i] = (double)(((float*)sound)[i * 2]);
+					}
 				
-				fft.Transform(input, result);
-				/*for (UINT32 i = 0; i < N / 2; ++i)
-				{
-					amp[i] = result[i].mod() * 2;
-					phase[i] = result[i].arg();
-				}*/
+					fft.Transform(input, result);
+					for (UINT32 i = 0; i < N / 2; ++i)
+					{
+						amp[i] = result[i].mod() * 2;
+						phase[i] = result[i].arg();
+					}
+					/*for (size_t i = 0; i < N; ++i)
+					{
+						reconstructed[i] = 0;
+						reconstructed[i] += amp[0] * 0.5;
+						for (size_t j = 1; j < N / 2; ++j)
+						{
+							reconstructed[i] += amp[j] * cos((double)i * j * 2 * pi / N + phase[j]);
+						}
+					}*/
+				}
 				DrawGL();
 				SwapBuffers(hDC);
 			}
@@ -113,7 +139,7 @@ int main(int argc, char** argv)
 			}
 		}
 	}
-	MyMicrophone->Stop();
+	if(!test) MyMicrophone->Stop();
 	DisableOpenGL(hWnd, hDC, hRC);
 	DestroyWindow(hWnd);
 	return msg.wParam;
@@ -192,13 +218,16 @@ void DisableOpenGL(HWND hWnd, HDC hDC, HGLRC hRC)
 {
 	//delete[] nums;
 	//delete[] reconstructed;
-	/*delete[] result;
-	delete[] amp;
-	delete[] phase;
-	delete[] input;
-	delete[] sound;
-	delete MyMicrophone;*/
-	AudioLayer::Cleanup();
+	if (!test)
+	{
+		delete[] result;
+		delete[] amp;
+		delete[] phase;
+		delete[] input;
+		delete[] sound;
+		delete MyMicrophone;
+		AudioLayer::Cleanup();
+	}
 	wglMakeCurrent(NULL, NULL);
 	wglDeleteContext(hRC);
 	ReleaseDC(hWnd, hDC);
@@ -258,47 +287,42 @@ void SetVSync(bool sync)
 }
 void Initialize()
 {
-	P = 11;
-	N = (size_t)1 << P;
 	reconstruct_samples = 1;
-	//dft.Initialize(N);
-	fft.Initialize(P);
-	AudioLayer::Initialize();
-	
-	MyMicrophone = AudioLayer::GetDefaultCaptureEndpoint();
-	MyMicrophone->Initialize(N * 1000 / MyMicrophone->GetWaveFormat()->nSamplesPerSec);
-	//nums = new double[N]();
-	//reconstructed = new double[N]();
-	size_t half = N / 2;
-	//double* amp = new double[half];
-	//double* phase = new double[half];
-	/*double t = 0;
-	srand(time(0));
-	for (size_t i = 0; i < N; ++i, t += 0.6) // Input signal
+	if (test)
 	{
-		//nums[i] = sin(30 * (t / rad)) * 100 + sin(17 * t / rad) * 60 + cos(25 * t / rad) * 75;
-		nums[i] = sqrt(t) * 30;// +sin(34 * t / rad) * 30;
-		//nums[i] = 100 * ((i * 8 / N) % 2);
-		//nums[i] = rand() % 100;
-	}
-	result = new Complex[N];
-	//dft.Transform(nums, result);
-	fft.Transform(nums, result);
-	for (size_t i = 0; i < half; ++i)
-	{
-		amp[i] = result[i].mod() * 2;
-		phase[i] = result[i].arg();
-	}
-	for (size_t i = 0; i < N; ++i)
-	{
-		reconstructed[i] += amp[0] * 0.5;
-		for (size_t j = 1; j < half; ++j)
+		fft.Initialize(P);
+		nums = new double[N]();
+		reconstructed = new double[N]();
+		size_t half = N / 2;
+		double* amp = new double[half];
+		phase = new double[half];
+		double t = 0;
+		srand(time(0));
+		for (size_t i = 0; i < N; ++i, t += pi / (double)N) // Input signal
 		{
-			reconstructed[i] += amp[j] * cos((double)i * j * 2 * pi / N + phase[j]);
+			nums[i] = cos(30 * t) * 20;// +cos(300 * t) * 18;// +cos(25 * t / rad) * 75;
+			//nums[i] = sqrt(t) * 30;// +sin(34 * t / rad) * 30;
+			//nums[i] = 100 * ((i * 8 / N) % 2);
+			//nums[i] = rand() % 100;
 		}
+		result = new Complex[N];
+		fft.Transform(nums, result);
+		/*for (size_t i = 0; i < half; ++i)
+		{
+			amp[i] = result[i].mod() * 2;
+			phase[i] = result[i].arg();
+		}
+		for (size_t i = 0; i < N; ++i)
+		{
+			reconstructed[i] += amp[0] * 0.5;
+			for (size_t j = 1; j < half; ++j)
+			{
+				reconstructed[i] += amp[j] * cos((double)i * j * 2 * pi / N + phase[j]);
+			}
+		}*/
+		delete[] amp;
+		delete[] phase;
 	}
-	delete[] amp;
-	delete[] phase;*/
 }
 void DrawGL()
 {
@@ -306,26 +330,34 @@ void DrawGL()
 	glLoadIdentity();
 	double x = -(double)N / 2.0;
 	double scale = (double)width / (double)N;
-	/*glColor3f(0, 1, 0);
-	glBegin(GL_LINE_STRIP);
-	for (size_t i = 0; i < N; ++i, x += 1)
+	if (test)
 	{
-	glVertex2d(x * scale, nums[i]);
+		glColor3f(0, 1, 0);
+		glBegin(GL_LINE_STRIP);
+		for (size_t i = 0; i < N; ++i, x += 1)
+		{
+			//glVertex2d(x * scale, nums[i]);
+		}
+		glEnd();
 	}
-	glEnd();*/
-	/*glColor3f(0, 1, 0);
-	glBegin(GL_LINE_STRIP);
-	for (size_t i = 0; i < N; ++i, x += 1)
+	else
 	{
-		glVertex2d(x * scale, input[i] * 150);
+		glColor3f(0, 1, 0);
+		glBegin(GL_LINE_STRIP);
+		for (size_t i = 0; i < N; ++i, x += 1)
+		{
+			glVertex2d(x * scale, input[i] * 500);
+		}
+		glEnd();
 	}
-	glEnd();*/
-	x = -(double)N / 2.0;
+	x = 0.0;
 	glColor3f(0, 0.6, 1);
 	glBegin(GL_LINE_STRIP);
-	for (size_t i = 0; i < N / 2; ++i, x += 1)
+	//glBegin(GL_LINES);
+	for (size_t i = 0; i < N / 2; ++i, x += 1.0)
 	{
-		glVertex2d(x * scale * 2 + width / 2, result[i].mod() * 5000);
+		glVertex2d(x * 2 - width / 2, result[i].mod() * 2 * 2000);
+		//glVertex2d(x * 2 - width / 2, 0);
 	}
 	glEnd();
 	/*
@@ -338,4 +370,8 @@ void DrawGL()
 	}
 	glEnd();
 	*/
+	/*glBegin(GL_LINES);
+	glVertex2d(0 - width / 2, 30);
+	glVertex2d(30 - width / 2, 30);
+	glEnd();*/
 }

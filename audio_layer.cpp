@@ -1,4 +1,5 @@
 #include "audio_layer.h"
+#include <iostream>
 
 namespace AudioLayer
 {

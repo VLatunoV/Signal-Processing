@@ -64,30 +64,33 @@ int main(int argc, char** argv)
 	CreateOGLWindow(width, height, fullscreen);
 
 	test = false;
-	P = 10;
+	P = 11;
 	N = (size_t)1 << P;
 
 	EnableOpenGL(hWnd, &hDC, &hRC);
 
-	UINT32 length = N;
 	UINT32 timeInterval;
 	if (!test)
 	{
-
 		fft.Initialize(P);
 		AudioLayer::Initialize();
 		MyMicrophone = AudioLayer::GetDefaultCaptureEndpoint();
-		timeInterval = N * 1000 / MyMicrophone->GetWaveFormat()->nSamplesPerSec;
+		//timeInterval = N * 1000 / MyMicrophone->GetWaveFormat()->nSamplesPerSec;
+		timeInterval = 1000;
 		MyMicrophone->Initialize(timeInterval);
 	
 		MyMicrophone->Start();
-		sound = new BYTE[length * 8]();
-		result = new Complex[length];
-		amp = new double[length / 2];
-		phase = new double[length / 2];
-		input = new double[length]();
+		//sound = new BYTE[N * 8]();
+		sound = new BYTE[MyMicrophone->GetWaveFormat()->nAvgBytesPerSec]();
+		result = new Complex[N];
+		amp = new double[N / 2];
+		phase = new double[N / 2];
+		input = new double[N]();
 	}
 	
+
+	double scaling = (double)MyMicrophone->GetWaveFormat()->nSamplesPerSec / (double)N;
+
 	while (!bQuit)
 	{
 		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
@@ -109,9 +112,9 @@ int main(int argc, char** argv)
 				if(!test)
 				{
 					MyMicrophone->Capture(timeInterval, sound);
-					for (size_t i = 0; i < length; i += 1)
+					for (size_t i = 0; i < N; ++i)
 					{
-						input[i] = (double)(((float*)sound)[i * 2]);
+						input[i] = (double)(((float*)sound)[int(scaling * i * 2)]);
 					}
 				
 					fft.Transform(input, result);
@@ -346,18 +349,18 @@ void DrawGL()
 		glBegin(GL_LINE_STRIP);
 		for (size_t i = 0; i < N; ++i, x += 1)
 		{
-			glVertex2d(x * scale, input[i] * 500);
+			glVertex2d(x * scale, input[i] * 500 - height / 5);
 		}
 		glEnd();
 	}
 	x = 0.0;
 	glColor3f(0, 0.6, 1);
-	glBegin(GL_LINE_STRIP);
-	//glBegin(GL_LINES);
+	//glBegin(GL_LINE_STRIP);
+	glBegin(GL_LINES);
 	for (size_t i = 0; i < N / 2; ++i, x += 1.0)
 	{
-		glVertex2d(x * 2 - width / 2, result[i].mod() * 2 * 2000);
-		//glVertex2d(x * 2 - width / 2, 0);
+		glVertex2d(x * 2 - width / 2, result[i].mod() * 2 * 2000 + height / 5);
+		glVertex2d(x * 2 - width / 2, height / 5);
 	}
 	glEnd();
 	/*
@@ -370,8 +373,13 @@ void DrawGL()
 	}
 	glEnd();
 	*/
-	/*glBegin(GL_LINES);
-	glVertex2d(0 - width / 2, 30);
-	glVertex2d(30 - width / 2, 30);
-	glEnd();*/
+	glBegin(GL_LINES);
+	for (double i = -width / 2; i < width / 2; i += 50)
+	{
+		glVertex2d(i, height / 5 - 5);
+		glVertex2d(i, height / 5 - 15);
+	}
+	glVertex2d(440 - width / 2, height / 5 - 5);
+	glVertex2d(440 - width / 2, height / 5 - 25);
+	glEnd();
 }

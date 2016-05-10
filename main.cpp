@@ -14,13 +14,13 @@ DFT dft;
 FFT fft;
 size_t N;
 size_t P;
-double* nums = nullptr;
+Cyclic<double> nums;
 double* reconstructed = nullptr;
 double reconstruct_samples;
 double* amp;
 double* phase;
 Complex* result = nullptr;
-double* input;
+Cyclic<double> input;
 BYTE* sound;
 bool test;
 HINSTANCE hInstance;
@@ -63,8 +63,12 @@ int main(int argc, char** argv)
 	GetMonitorParameters(MonitorX, MonitorY);
 	CreateOGLWindow(width, height, fullscreen);
 
+	double samplingIndex = 0.0;
+	double scaling;
+	size_t soundLength;
+
 	test = false;
-	P = 11;
+	P = 12;
 	N = (size_t)1 << P;
 
 	EnableOpenGL(hWnd, &hDC, &hRC);
@@ -75,21 +79,25 @@ int main(int argc, char** argv)
 		fft.Initialize(P);
 		AudioLayer::Initialize();
 		MyMicrophone = AudioLayer::GetDefaultCaptureEndpoint();
+
 		//timeInterval = N * 1000 / MyMicrophone->GetWaveFormat()->nSamplesPerSec;
-		timeInterval = 1000;
+		timeInterval = 20;
+		soundLength = timeInterval * MyMicrophone->GetWaveFormat()->nAvgBytesPerSec / 1000;
+		scaling = (double)MyMicrophone->GetWaveFormat()->nSamplesPerSec / (double)N;
 		MyMicrophone->Initialize(timeInterval);
 	
 		MyMicrophone->Start();
 		//sound = new BYTE[N * 8]();
-		sound = new BYTE[MyMicrophone->GetWaveFormat()->nAvgBytesPerSec]();
+		sound = new BYTE[soundLength]();
+		//sound = new BYTE[MyMicrophone->GetWaveFormat()->nAvgBytesPerSec]();
 		result = new Complex[N];
 		amp = new double[N / 2];
 		phase = new double[N / 2];
-		input = new double[N]();
+		//input = new double[N]();
+		input.Initialize(P);
 	}
 	
-
-	double scaling = (double)MyMicrophone->GetWaveFormat()->nSamplesPerSec / (double)N;
+	
 
 	while (!bQuit)
 	{
@@ -112,16 +120,22 @@ int main(int argc, char** argv)
 				if(!test)
 				{
 					MyMicrophone->Capture(timeInterval, sound);
-					for (size_t i = 0; i < N; ++i)
+					int i;
+					for (i = 0; samplingIndex < soundLength / 8; samplingIndex += scaling, ++i)
 					{
-						input[i] = (double)(((float*)sound)[int(scaling * i * 2)]);
+						//input[i] = (double)(((float*)sound)[int(scaling * i * 2)]);
+						input.push_back((double)(((float*)sound)[int(samplingIndex) * 2]));
 					}
-				
-					fft.Transform(input, result);
-					for (UINT32 i = 0; i < N / 2; ++i)
+					//std::cout << "Samples: " << i << "\n";
+					samplingIndex -= soundLength / 8;
+					if (input.GetSize() == N)
 					{
-						amp[i] = result[i].mod() * 2;
-						phase[i] = result[i].arg();
+						fft.Transform(input, result);
+						for (UINT32 i = 0; i < N / 2; ++i)
+						{
+							amp[i] = result[i].mod() * 2;
+							phase[i] = result[i].arg();
+						}
 					}
 					/*for (size_t i = 0; i < N; ++i)
 					{
@@ -226,7 +240,7 @@ void DisableOpenGL(HWND hWnd, HDC hDC, HGLRC hRC)
 		delete[] result;
 		delete[] amp;
 		delete[] phase;
-		delete[] input;
+		//delete[] input;
 		delete[] sound;
 		delete MyMicrophone;
 		AudioLayer::Cleanup();
@@ -294,7 +308,8 @@ void Initialize()
 	if (test)
 	{
 		fft.Initialize(P);
-		nums = new double[N]();
+		//nums = new double[N]();
+		nums.Initialize(P);
 		reconstructed = new double[N]();
 		size_t half = N / 2;
 		double* amp = new double[half];
@@ -303,10 +318,14 @@ void Initialize()
 		srand(time(0));
 		for (size_t i = 0; i < N; ++i, t += pi / (double)N) // Input signal
 		{
-			nums[i] = cos(30 * t) * 20;// +cos(300 * t) * 18;// +cos(25 * t / rad) * 75;
+			/*nums[i] = cos(30 * t) * 20;// +cos(300 * t) * 18;// +cos(25 * t / rad) * 75;
 			//nums[i] = sqrt(t) * 30;// +sin(34 * t / rad) * 30;
 			//nums[i] = 100 * ((i * 8 / N) % 2);
-			//nums[i] = rand() % 100;
+			//nums[i] = rand() % 100;*/
+			nums.push_back(cos(30 * t) * 20/* +cos(300 * t) * 18;// +cos(25 * t / rad) * 75*/);
+			//nums.push_back(sqrt(t) * 30;// +sin(34 * t / rad) * 30);
+			//nums.push_back(100 * ((i * 8 / N) % 2));
+			//nums.push_back(rand() % 100);
 		}
 		result = new Complex[N];
 		fft.Transform(nums, result);

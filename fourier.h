@@ -1,5 +1,6 @@
 #pragma once
 #include "complex.h"
+#include "cyclic.h"
 
 class DFT
 {
@@ -12,7 +13,7 @@ public:
 	DFT();
 	~DFT();
 	void Initialize(size_t);
-	void Transform(const double*, Complex*) const;
+	void Transform(const Cyclic<double>&, Complex*) const;
 };
 
 class FFT : public DFT
@@ -23,10 +24,10 @@ protected:
 	size_t p;
 	Complex* working;
 
-	void _transform(const double*, size_t, size_t, Complex*, Complex*);
+	void _transform(const Cyclic<double>&, size_t, size_t, Complex*, Complex*);
 public:
 	FFT();
 	~FFT();
 	void Initialize(size_t);
-	void Transform(const double*, Complex*);
+	void Transform(const Cyclic<double>&, Complex*);
 };

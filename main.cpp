@@ -6,6 +6,7 @@
 #include <thread>
 #include "fourier.h"
 #include "audio_layer.h"
+#include "font.h"
 
 using namespace std;
 
@@ -14,15 +15,30 @@ DFT dft;
 FFT fft;
 size_t N;
 size_t P;
-Cyclic<double> nums;
-double* reconstructed = nullptr;
-double reconstruct_samples;
-double* amp;
-double* phase;
-Complex* result = nullptr;
-Cyclic<double> input;
-BYTE* sound;
+Cyclic<float> nums;
+float* reconstructed = nullptr;
+float reconstruct_samples;
+float* amp = nullptr;
+float* phase = nullptr;
+Complex<float>* result = nullptr;
+Cyclic<float> input;
+BYTE* sound = nullptr;
 bool test;
+size_t max_freq = 0;
+
+float samplingIndex = 0.0;
+float scaling;
+float scale_correction;
+size_t soundLength;
+
+unsigned int spectrogram;
+float tex_x = 1;
+unsigned char* update_texture = nullptr;
+unsigned char* pallet_red = nullptr;
+unsigned char* pallet_green = nullptr;
+unsigned char* pallet_blue = nullptr;
+const size_t pallet_size = 200;
+
 HINSTANCE hInstance;
 HWND hWnd;
 HDC hDC;
@@ -63,10 +79,6 @@ int main(int argc, char** argv)
 	GetMonitorParameters(MonitorX, MonitorY);
 	CreateOGLWindow(width, height, fullscreen);
 
-	double samplingIndex = 0.0;
-	double scaling;
-	size_t soundLength;
-
 	test = false;
 	P = 12;
 	N = (size_t)1 << P;
@@ -76,6 +88,7 @@ int main(int argc, char** argv)
 	UINT32 timeInterval;
 	if (!test)
 	{
+		Initialize_Font();
 		fft.Initialize(P);
 		AudioLayer::Initialize();
 		MyMicrophone = AudioLayer::GetDefaultCaptureEndpoint();
@@ -83,20 +96,37 @@ int main(int argc, char** argv)
 		//timeInterval = N * 1000 / MyMicrophone->GetWaveFormat()->nSamplesPerSec;
 		timeInterval = 20;
 		soundLength = timeInterval * MyMicrophone->GetWaveFormat()->nAvgBytesPerSec / 1000;
-		scaling = (double)MyMicrophone->GetWaveFormat()->nSamplesPerSec / (double)N;
+		scale_correction = 1.0;
+		scaling = (float)MyMicrophone->GetWaveFormat()->nSamplesPerSec / (float)N / scale_correction;
 		MyMicrophone->Initialize(timeInterval);
 	
 		MyMicrophone->Start();
 		//sound = new BYTE[N * 8]();
 		sound = new BYTE[soundLength]();
 		//sound = new BYTE[MyMicrophone->GetWaveFormat()->nAvgBytesPerSec]();
-		result = new Complex[N];
-		amp = new double[N / 2];
-		phase = new double[N / 2];
-		//input = new double[N]();
+		result = new Complex<float>[N];
+		amp = new float[N / 2];
+		phase = new float[N / 2];
+		update_texture = new unsigned char[2 * N];
+		pallet_blue = new unsigned char[pallet_size];
+		pallet_green = new unsigned char[pallet_size];
+		pallet_red = new unsigned char[pallet_size];
+		float I;
+		for (int a = 0; a < pallet_size; ++a)
+		{
+			I = (float)a * 255 / (float)pallet_size;
+			pallet_red[a] = I;
+			pallet_green[a] = 0;
+			pallet_blue[a] = I;
+		}
+		for (int a = 0; a < N / 2; ++a)
+		{
+			update_texture[a * 4 + 3] = 255;
+		}
+		//input = new float[N]();
 		input.Initialize(P);
 	}
-	
+	int var1;
 	
 
 	while (!bQuit)
@@ -123,19 +153,41 @@ int main(int argc, char** argv)
 					int i;
 					for (i = 0; samplingIndex < soundLength / 8; samplingIndex += scaling, ++i)
 					{
-						//input[i] = (double)(((float*)sound)[int(scaling * i * 2)]);
-						input.push_back((double)(((float*)sound)[int(samplingIndex) * 2]));
+						input.push_back(((float*)sound)[int(samplingIndex) * 2]);
+						//input.push_back((float)(((float*)sound)[i]));
 					}
 					//std::cout << "Samples: " << i << "\n";
 					samplingIndex -= soundLength / 8;
 					if (input.GetSize() == N)
 					{
 						fft.Transform(input, result);
+						max_freq = 0;
 						for (UINT32 i = 0; i < N / 2; ++i)
 						{
-							amp[i] = result[i].mod() * 2;
-							phase[i] = result[i].arg();
+							amp[i] = result[i].mod() * 2 * 1000;
+							//amp[i] = result[i].mod_sqr() * N * 100;
+							//phase[i] = result[i].arg();
+							if (amp[i] > amp[max_freq])
+							{
+								max_freq = i;
+							}
 						}
+						for (i = 0; i < N / 2; ++i)
+						{
+							var1 = (amp[i] * pallet_size);
+							var1 = var1 > pallet_size - 1 ? pallet_size - 1 : var1;
+							update_texture[i * 4] = pallet_red[var1];
+							update_texture[i * 4 + 1] = pallet_green[var1];
+							update_texture[i * 4 + 2] = pallet_blue[var1];
+						}
+						glBindTexture(GL_TEXTURE_2D, spectrogram);
+						glTexSubImage2D(GL_TEXTURE_2D, 0, (int)(tex_x * width), 0, 1, N / 2, GL_RGBA, GL_UNSIGNED_BYTE, update_texture);
+						tex_x += 1.f / width;
+						if (tex_x > 1.0)
+						{
+							tex_x -= 1.0;
+						}
+
 					}
 					/*for (size_t i = 0; i < N; ++i)
 					{
@@ -237,6 +289,10 @@ void DisableOpenGL(HWND hWnd, HDC hDC, HGLRC hRC)
 	//delete[] reconstructed;
 	if (!test)
 	{
+		delete[] update_texture;
+		delete[] pallet_blue;
+		delete[] pallet_green;
+		delete[] pallet_red;
 		delete[] result;
 		delete[] amp;
 		delete[] phase;
@@ -308,33 +364,33 @@ void Initialize()
 	if (test)
 	{
 		fft.Initialize(P);
-		//nums = new double[N]();
+		//nums = new float[N]();
 		nums.Initialize(P);
-		reconstructed = new double[N]();
+		reconstructed = new float[N]();
 		size_t half = N / 2;
-		double* amp = new double[half];
-		phase = new double[half];
-		double t = 0;
+		amp = new float[half];
+		phase = new float[half];
+		float t = 0;
 		srand(time(0));
-		for (size_t i = 0; i < N; ++i, t += pi / (double)N) // Input signal
+		for (size_t i = 0; i < N; ++i, t += 2 * pi / (float)N) // Input signal
 		{
 			/*nums[i] = cos(30 * t) * 20;// +cos(300 * t) * 18;// +cos(25 * t / rad) * 75;
 			//nums[i] = sqrt(t) * 30;// +sin(34 * t / rad) * 30;
 			//nums[i] = 100 * ((i * 8 / N) % 2);
 			//nums[i] = rand() % 100;*/
-			nums.push_back(cos(30 * t) * 20/* +cos(300 * t) * 18;// +cos(25 * t / rad) * 75*/);
+			nums.push_back(cos(440.5 * t) * 20/*+cos(460.1 * t) * 18/* +cos(25 * t / rad) * 75*/);
 			//nums.push_back(sqrt(t) * 30;// +sin(34 * t / rad) * 30);
 			//nums.push_back(100 * ((i * 8 / N) % 2));
 			//nums.push_back(rand() % 100);
 		}
-		result = new Complex[N];
+		result = new Complex<float>[N];
 		fft.Transform(nums, result);
-		/*for (size_t i = 0; i < half; ++i)
+		for (size_t i = 0; i < half; ++i)
 		{
 			amp[i] = result[i].mod() * 2;
 			phase[i] = result[i].arg();
 		}
-		for (size_t i = 0; i < N; ++i)
+		/*for (size_t i = 0; i < N; ++i)
 		{
 			reconstructed[i] += amp[0] * 0.5;
 			for (size_t j = 1; j < half; ++j)
@@ -342,23 +398,53 @@ void Initialize()
 				reconstructed[i] += amp[j] * cos((double)i * j * 2 * pi / N + phase[j]);
 			}
 		}*/
-		delete[] amp;
-		delete[] phase;
+		//delete[] amp;
+		//delete[] phase;
 	}
+
+	GLubyte* __data = new GLubyte[width * N * 2]();
+	for (int i = 0; i < N / 2; ++i)
+	{
+		for (int j = 0; j < width; ++j)
+		{
+			//__data[(i * width + j) * 4 + 0] = 0;
+			__data[(i * width + j) * 4 + 1] = 255 * ((float)j / (float)width);
+			__data[(i * width + j) * 4 + 2] = 255 * ((float)j / (float)width);
+			__data[(i * width + j) * 4 + 3] = 255;
+		}
+	}
+	glGenTextures(1, &spectrogram);
+	glBindTexture(GL_TEXTURE_2D, spectrogram);
+	glTexImage2D(GL_TEXTURE_2D, 0, 4, width, N / 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, __data);
+	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	delete[] __data;
 }
 void DrawGL()
 {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glLoadIdentity();
-	double x = -(double)N / 2.0;
-	double scale = (double)width / (double)N;
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, spectrogram);
+	glColor3f(1, 1, 1);
+	glBegin(GL_QUADS);
+	glTexCoord2f(tex_x, 0); glVertex2f(-width / 2, -height / 2);
+	glTexCoord2f(tex_x - 1, 0); glVertex2f(width / 2, -height / 2);
+	glTexCoord2f(tex_x - 1, 1); glVertex2f(width / 2, height / 2);
+	glTexCoord2f(tex_x, 1); glVertex2f(-width / 2, height / 2);
+	glEnd();
+	glDisable(GL_TEXTURE_2D);
+	float x = -(float)N / 2.0;
+	float scale = (float)width / (float)N;
 	if (test)
 	{
 		glColor3f(0, 1, 0);
 		glBegin(GL_LINE_STRIP);
 		for (size_t i = 0; i < N; ++i, x += 1)
 		{
-			//glVertex2d(x * scale, nums[i]);
+			glVertex2d(x * scale, nums[i]);
 		}
 		glEnd();
 	}
@@ -374,16 +460,16 @@ void DrawGL()
 	}
 	x = 0.0;
 	glColor3f(0, 0.6, 1);
-	//glBegin(GL_LINE_STRIP);
-	glBegin(GL_LINES);
-	for (size_t i = 0; i < N / 2; ++i, x += 1.0)
+	glBegin(GL_LINE_STRIP);
+	//glBegin(GL_LINES);
+	for (size_t i = 0; i < N / 2; ++i, x += 1.0 * scale_correction)
 	{
-		glVertex2d(x * 2 - width / 2, result[i].mod() * 2 * 2000 + height / 5);
-		glVertex2d(x * 2 - width / 2, height / 5);
+		glVertex2d(x - width / 2, amp[i] * 100 + height / 5);
+		//glVertex2d(x - width / 2, height / 5);
 	}
 	glEnd();
 	/*
-	x = -(double)N / 2.0;
+	x = -(float)N / 2.0;
 	glColor3f(1, 0, 1);
 	glBegin(GL_LINE_STRIP);
 	for (size_t i = 0; i < N; ++i, x += 1.0)
@@ -393,7 +479,7 @@ void DrawGL()
 	glEnd();
 	*/
 	glBegin(GL_LINES);
-	for (double i = -width / 2; i < width / 2; i += 50)
+	for (float i = -width / 2; i < width / 2; i += 50)
 	{
 		glVertex2d(i, height / 5 - 5);
 		glVertex2d(i, height / 5 - 15);
@@ -401,4 +487,15 @@ void DrawGL()
 	glVertex2d(440 - width / 2, height / 5 - 5);
 	glVertex2d(440 - width / 2, height / 5 - 25);
 	glEnd();
+	if (!test)
+	{
+		glEnable(GL_TEXTURE_2D);
+		unsigned char* freq = make_number_to_text((float)max_freq * (float)scale_correction);
+		glScalef(1, -1, 1);
+		glColor3f(1, 1, 1);
+		draw_text(freq, -width / 2 + 50, -height / 2 + 50, 1);
+		glScalef(1, -1, 1);
+		delete[] freq;
+		glDisable(GL_TEXTURE_2D);
+	}
 }

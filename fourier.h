@@ -7,13 +7,13 @@ class DFT
 	DFT(const DFT&);
 	DFT& operator= (const DFT&);
 protected:
-	Complex* coeff;
+	Complex<float>* coeff;
 	size_t N;
 public:
 	DFT();
 	~DFT();
 	void Initialize(size_t);
-	void Transform(const Cyclic<double>&, Complex*) const;
+	void Transform(const Cyclic<float>&, Complex<float>*) const;
 };
 
 class FFT : public DFT
@@ -22,12 +22,12 @@ class FFT : public DFT
 	FFT& operator= (const FFT&);
 protected:
 	size_t p;
-	Complex* working;
+	Complex<float>* working;
 
-	void _transform(const Cyclic<double>&, size_t, size_t, Complex*, Complex*);
+	void _transform(const Cyclic<float>&, size_t, size_t, Complex<float>*, Complex<float>*);
 public:
 	FFT();
 	~FFT();
 	void Initialize(size_t);
-	void Transform(const Cyclic<double>&, Complex*);
+	void Transform(const Cyclic<float>&, Complex<float>*);
 };

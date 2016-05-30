@@ -10,20 +10,20 @@ void DFT::Initialize(size_t size)
 {
 	N = size;
 	delete[] coeff;
-	coeff = new Complex[N];
+	coeff = new Complex<float>[N];
 	double Im = -2 * pi / N;
 	for (size_t i = 0; i < N; ++i)
 	{
-		coeff[i] = exp(Complex(0, Im * i));
+		coeff[i] = exp(Complex<float>(0, Im * i));
 	}
 }
-void DFT::Transform(const Cyclic<double>& arr, Complex* result) const
+void DFT::Transform(const Cyclic<float>& arr, Complex<float>* result) const
 {
 	for (size_t i = 0; i < N; ++i)
 	{
 		for (size_t j = 0; j < N; ++j)
 		{
-			result[i] += Complex(arr[j], 0) * coeff[(i * j) % N];
+			result[i] += Complex<float>(arr[j], 0) * coeff[(i * j) % N];
 		}
 		result[i] /= N;
 	}
@@ -38,13 +38,13 @@ void FFT::Initialize(size_t p)
 	DFT::Initialize((size_t)1 << p);
 	this->p = p;
 	delete[] working;
-	working = new Complex[N];
+	working = new Complex<float>[N];
 }
-void FFT::Transform(const Cyclic<double>& arr, Complex* result)
+void FFT::Transform(const Cyclic<float>& arr, Complex<float>* result)
 {
 	if (N == 1)
 	{
-		result[0] = Complex(arr[0], 0);
+		result[0] = Complex<float>(arr[0], 0);
 		return;
 	}
 	_transform(arr, N, 1, result, working);
@@ -53,7 +53,7 @@ void FFT::Transform(const Cyclic<double>& arr, Complex* result)
 		result[i] /= N;
 	}
 }
-void FFT::_transform(const Cyclic<double>& arr, size_t size, size_t stride, Complex* result, Complex* working)
+void FFT::_transform(const Cyclic<float>& arr, size_t size, size_t stride, Complex<float>* result, Complex<float>* working)
 {
 	if (size == 2)
 	{

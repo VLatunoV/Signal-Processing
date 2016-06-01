@@ -1,44 +1,47 @@
-#include <windows.h>
-//#include <gl/glew.h>
-#include <gl/gl.h>
-//#include <gl/glu.h>
+#include "gl_construct.h"
 #include <iostream>
-#include <thread>
 #include "fourier.h"
 #include "audio_layer.h"
 #include "font.h"
+#include <time.h>
 
 using namespace std;
 
+// Microphone Capture
 AudioLayer::CaptureEndpoint* MyMicrophone;
-DFT dft;
+BYTE* soundArray = nullptr;
+size_t soundLength;
+float samplingIndex = 0.0;
+float scaling;
+UINT32 timeInterval;
+
+// Fourier Transform
 FFT fft;
 size_t N;
 size_t P;
-Cyclic<float> nums;
+size_t maxFrequency = 0;
+
+// Input signal
+Cyclic<float> genInput;
+Cyclic<float> capInput;
+Complex<float>* result = nullptr;
 float* reconstructed = nullptr;
-float reconstruct_samples;
+float reconstructSamples;
 float* amp = nullptr;
 float* phase = nullptr;
-Complex<float>* result = nullptr;
-Cyclic<float> input;
-BYTE* sound = nullptr;
-bool test;
-size_t max_freq = 0;
+bool generated = false;				// True -> generated input signal, False -> capture input signal
 
-float samplingIndex = 0.0;
-float scaling;
-float scale_correction;
-size_t soundLength;
+// Spectrogram
+unsigned int spectroID;
+int spectroWidth;
+float spectroOffsetX = 1;
+unsigned char* spectroUpdateArray = nullptr;
+unsigned char* palletRed = nullptr;
+unsigned char* palletGreen = nullptr;
+unsigned char* palletBlue = nullptr;
+const size_t palletSize = 200;
 
-unsigned int spectrogram;
-float tex_x = 1;
-unsigned char* update_texture = nullptr;
-unsigned char* pallet_red = nullptr;
-unsigned char* pallet_green = nullptr;
-unsigned char* pallet_blue = nullptr;
-const size_t pallet_size = 200;
-
+// Window
 HINSTANCE hInstance;
 HWND hWnd;
 HDC hDC;
@@ -52,14 +55,110 @@ int MouseX;
 int MouseY;
 bool fullscreen = false;
 bool keys[256];
-LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-void EnableOpenGL(HWND hWnd, HDC *hDC, HGLRC *hRC);
-void DisableOpenGL(HWND hWnd, HDC hDC, HGLRC hRC);
-void CreateOGLWindow(int, int, bool);
-void GetMonitorParameters(int&, int&);
-void SetVSync(bool);
-void Initialize();
-void DrawGL();
+
+void Initialize()
+{
+	P = 13;
+	N = (size_t)1 << P;
+	fft.Initialize(P);
+	amp = new float[N / 2];
+	phase = new float[N / 2];
+	result = new Complex<float>[N];
+
+	if (!generated)
+	{
+		Initialize_Font();
+		MyMicrophone = AudioLayer::GetDefaultCaptureEndpoint();
+		//timeInterval = N * 1000 / MyMicrophone->GetWaveFormat()->nSamplesPerSec;
+		timeInterval = 20;
+		MyMicrophone->Initialize(timeInterval);
+		soundLength = MyMicrophone->GetBufferSize();
+		scaling = (float)MyMicrophone->GetWaveFormat()->nSamplesPerSec / (float)N;
+
+		MyMicrophone->Start();
+		soundArray = new BYTE[soundLength]();
+		spectroUpdateArray = new unsigned char[4 * N / 2];
+		palletBlue = new unsigned char[palletSize];
+		palletGreen = new unsigned char[palletSize];
+		palletRed = new unsigned char[palletSize];
+		float I;
+		for (int index = 0; index < palletSize; ++index)
+		{
+			I = (float)index * 255 / (float)palletSize;
+			palletRed[index] = I;
+			palletGreen[index] = 0;
+			palletBlue[index] = 0;
+		}
+		for (int index = 0; index < N / 2; ++index)
+		{
+			spectroUpdateArray[index * 4 + 3] = 255;
+		}
+		capInput.Initialize(P);
+	}
+	else
+	{
+		reconstructSamples = 1.f;
+		genInput.Initialize(P);
+		reconstructed = new float[N]();
+		size_t half = N / 2;
+		float t = 0.f;
+		srand(time(0));
+		for (size_t i = 0; i < N; ++i, t += 2 * pi / (float)N)	// Input signal
+		{
+			/*genInput[i] = cos(30 * t) * 20;// +cos(300 * t) * 18;// +cos(25 * t / rad) * 75;
+			//genInput[i] = sqrt(t) * 30;// +sin(34 * t / rad) * 30;
+			//genInput[i] = 100 * ((i * 8 / N) % 2);
+			//genInput[i] = rand() % 100;*/
+			genInput.push_back(cos(440.5 * t) * 20/*+cos(460.1 * t) * 18/* +cos(25 * t / rad) * 75*/);
+			//genInput.push_back(sqrt(t) * 30;// +sin(34 * t / rad) * 30);
+			//genInput.push_back(100 * ((i * 8 / N) % 2));
+			//genInput.push_back(rand() % 100);
+		}
+		fft.Transform(genInput, result);
+		for (size_t i = 0; i < half; ++i)
+		{
+			amp[i] = result[i].mod() * 2;
+			phase[i] = result[i].arg();
+		}
+		/*for (size_t i = 0; i < N; ++i)
+		{
+			reconstructed[i] += amp[0] * 0.5;
+			for (size_t j = 1; j < half; ++j)
+			{
+				reconstructed[i] += amp[j] * cos((double)i * j * 2 * pi / N + phase[j]);
+			}
+		}*/
+	}
+	spectroWidth = width;
+	GLubyte* __data = new GLubyte[spectroWidth * (N / 2) * 4]();
+	glGenTextures(1, &spectroID);
+	glBindTexture(GL_TEXTURE_2D, spectroID);
+	glTexImage2D(GL_TEXTURE_2D, 0, 4, spectroWidth, N / 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, __data);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	delete[] __data;
+}
+void CleanUp()
+{
+	if (!generated)
+	{
+		delete[] spectroUpdateArray;
+		delete[] palletBlue;
+		delete[] palletGreen;
+		delete[] palletRed;
+		delete[] soundArray;
+		MyMicrophone->Stop();
+		delete MyMicrophone;
+		AudioLayer::Cleanup();
+	}
+	else
+	{
+		delete[] reconstructed;
+	}
+	delete[] result;
+	delete[] amp;
+	delete[] phase;
+}
 int main(int argc, char** argv)
 {
 	WNDCLASS wc;
@@ -78,56 +177,10 @@ int main(int argc, char** argv)
 	RegisterClass(&wc);
 	GetMonitorParameters(MonitorX, MonitorY);
 	CreateOGLWindow(width, height, fullscreen);
-
-	test = false;
-	P = 12;
-	N = (size_t)1 << P;
-
 	EnableOpenGL(hWnd, &hDC, &hRC);
-
-	UINT32 timeInterval;
-	if (!test)
-	{
-		Initialize_Font();
-		fft.Initialize(P);
-		AudioLayer::Initialize();
-		MyMicrophone = AudioLayer::GetDefaultCaptureEndpoint();
-
-		//timeInterval = N * 1000 / MyMicrophone->GetWaveFormat()->nSamplesPerSec;
-		timeInterval = 20;
-		soundLength = timeInterval * MyMicrophone->GetWaveFormat()->nAvgBytesPerSec / 1000;
-		scale_correction = 1.0;
-		scaling = (float)MyMicrophone->GetWaveFormat()->nSamplesPerSec / (float)N / scale_correction;
-		MyMicrophone->Initialize(timeInterval);
+	Initialize();
 	
-		MyMicrophone->Start();
-		//sound = new BYTE[N * 8]();
-		sound = new BYTE[soundLength]();
-		//sound = new BYTE[MyMicrophone->GetWaveFormat()->nAvgBytesPerSec]();
-		result = new Complex<float>[N];
-		amp = new float[N / 2];
-		phase = new float[N / 2];
-		update_texture = new unsigned char[2 * N];
-		pallet_blue = new unsigned char[pallet_size];
-		pallet_green = new unsigned char[pallet_size];
-		pallet_red = new unsigned char[pallet_size];
-		float I;
-		for (int a = 0; a < pallet_size; ++a)
-		{
-			I = (float)a * 255 / (float)pallet_size;
-			pallet_red[a] = I;
-			pallet_green[a] = 0;
-			pallet_blue[a] = I;
-		}
-		for (int a = 0; a < N / 2; ++a)
-		{
-			update_texture[a * 4 + 3] = 255;
-		}
-		//input = new float[N]();
-		input.Initialize(P);
-	}
-	int var1;
-	
+	int pickColor;
 
 	while (!bQuit)
 	{
@@ -147,57 +200,48 @@ int main(int argc, char** argv)
 		{
 			if (!bQuit)
 			{
-				if(!test)
+				if(!generated)
 				{
-					MyMicrophone->Capture(timeInterval, sound);
+					MyMicrophone->Capture(timeInterval, soundArray);
 					int i;
 					for (i = 0; samplingIndex < soundLength / 8; samplingIndex += scaling, ++i)
 					{
-						input.push_back(((float*)sound)[int(samplingIndex) * 2]);
-						//input.push_back((float)(((float*)sound)[i]));
+						capInput.push_back(((float*)soundArray)[int(samplingIndex) * 2]);
+						//capInput.push_back((float)(((float*)soundArray)[i]));
 					}
 					//std::cout << "Samples: " << i << "\n";
 					samplingIndex -= soundLength / 8;
-					if (input.GetSize() == N)
+					if (capInput.GetSize() == N)
 					{
-						fft.Transform(input, result);
-						max_freq = 0;
+						fft.Transform(capInput, result);
+						maxFrequency = 0;
 						for (UINT32 i = 0; i < N / 2; ++i)
 						{
-							amp[i] = result[i].mod() * 2 * 1000;
-							//amp[i] = result[i].mod_sqr() * N * 100;
+							//amp[i] = result[i].mod() * 2 * 1000;
+							amp[i] = result[i].mod_sqr() * N * 100;
 							//phase[i] = result[i].arg();
-							if (amp[i] > amp[max_freq])
+							if (amp[i] > amp[maxFrequency])
 							{
-								max_freq = i;
+								maxFrequency = i;
 							}
 						}
 						for (i = 0; i < N / 2; ++i)
 						{
-							var1 = (amp[i] * pallet_size);
-							var1 = var1 > pallet_size - 1 ? pallet_size - 1 : var1;
-							update_texture[i * 4] = pallet_red[var1];
-							update_texture[i * 4 + 1] = pallet_green[var1];
-							update_texture[i * 4 + 2] = pallet_blue[var1];
+							pickColor = (amp[i] * palletSize);
+							pickColor = pickColor > palletSize - 1 ? palletSize - 1 : pickColor;
+							spectroUpdateArray[i * 4] = palletRed[pickColor];
+							spectroUpdateArray[i * 4 + 1] = palletGreen[pickColor];
+							spectroUpdateArray[i * 4 + 2] = palletBlue[pickColor];
 						}
-						glBindTexture(GL_TEXTURE_2D, spectrogram);
-						glTexSubImage2D(GL_TEXTURE_2D, 0, (int)(tex_x * width), 0, 1, N / 2, GL_RGBA, GL_UNSIGNED_BYTE, update_texture);
-						tex_x += 1.f / width;
-						if (tex_x > 1.0)
+						glBindTexture(GL_TEXTURE_2D, spectroID);
+						glTexSubImage2D(GL_TEXTURE_2D, 0, (int)(spectroOffsetX * spectroWidth), 0, 1, N / 2, GL_RGBA, GL_UNSIGNED_BYTE, spectroUpdateArray);
+						spectroOffsetX += 1.f / spectroWidth;
+						if (spectroOffsetX > 1.0)
 						{
-							tex_x -= 1.0;
+							spectroOffsetX -= 1.0;
 						}
 
 					}
-					/*for (size_t i = 0; i < N; ++i)
-					{
-						reconstructed[i] = 0;
-						reconstructed[i] += amp[0] * 0.5;
-						for (size_t j = 1; j < N / 2; ++j)
-						{
-							reconstructed[i] += amp[j] * cos((double)i * j * 2 * pi / N + phase[j]);
-						}
-					}*/
 				}
 				DrawGL();
 				SwapBuffers(hDC);
@@ -208,243 +252,38 @@ int main(int argc, char** argv)
 			}
 		}
 	}
-	if(!test) MyMicrophone->Stop();
+	CleanUp();
 	DisableOpenGL(hWnd, hDC, hRC);
 	DestroyWindow(hWnd);
 	return msg.wParam;
-}
-LRESULT CALLBACK WndProc(HWND hWnd, UINT message,
-	WPARAM wParam, LPARAM lParam)
-{
-	switch (message)
-	{
-	case WM_CREATE:
-		return 0;
-	case WM_CLOSE:
-		PostQuitMessage(0);
-		return 0;
-	case WM_DESTROY:
-		return 0;
-	case WM_KEYDOWN:
-		keys[wParam] = true;
-		return 0;
-	case WM_KEYUP:
-		keys[wParam] = false;
-		return 0;
-	case WM_MOUSEMOVE:
-		MouseX = LOWORD(lParam);
-		MouseY = HIWORD(lParam);
-		return 0;
-	case WM_LBUTTONDOWN:
-		return 0;
-	case WM_LBUTTONUP:
-		return 0;
-	case WM_MOUSEWHEEL:
-		switch (HIWORD(wParam))
-		{
-		case 120: // Scroll up
-			break;
-		case 65416: // Scroll down
-			break;
-		}
-		return 0;
-	default:
-		return DefWindowProc(hWnd, message, wParam, lParam);
-	}
-}
-void EnableOpenGL(HWND hWnd, HDC *hDC, HGLRC *hRC)
-{
-	PIXELFORMATDESCRIPTOR pfd;
-	int iFormat;
-	*hDC = GetDC(hWnd);
-	ZeroMemory(&pfd, sizeof(pfd));
-	pfd.nSize = sizeof(pfd);
-	pfd.nVersion = 1;
-	pfd.dwFlags = PFD_DRAW_TO_WINDOW |
-		PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
-	pfd.iPixelType = PFD_TYPE_RGBA;
-	pfd.cColorBits = 24;
-	pfd.cDepthBits = 16;
-	pfd.iLayerType = PFD_MAIN_PLANE;
-	iFormat = ChoosePixelFormat(*hDC, &pfd);
-	SetPixelFormat(*hDC, iFormat, &pfd);
-	*hRC = wglCreateContext(*hDC);
-	wglMakeCurrent(*hDC, *hRC);
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-	//gluPerspective(45.f, (float)width / (float)height, 0.1, 10000);
-	glOrtho(-width / 2, width / 2, -height / 2, height / 2, 0, 1);
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
-	glLineWidth(2);
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glEnable(GL_LINE_SMOOTH);
-	Initialize();
-	SetVSync(false);
-}
-void DisableOpenGL(HWND hWnd, HDC hDC, HGLRC hRC)
-{
-	//delete[] nums;
-	//delete[] reconstructed;
-	if (!test)
-	{
-		delete[] update_texture;
-		delete[] pallet_blue;
-		delete[] pallet_green;
-		delete[] pallet_red;
-		delete[] result;
-		delete[] amp;
-		delete[] phase;
-		//delete[] input;
-		delete[] sound;
-		delete MyMicrophone;
-		AudioLayer::Cleanup();
-	}
-	wglMakeCurrent(NULL, NULL);
-	wglDeleteContext(hRC);
-	ReleaseDC(hWnd, hDC);
-}
-void CreateOGLWindow(int width, int height, bool full)
-{
-	RECT Client_Rect;
-	DWORD style;
-	Client_Rect.left = (MonitorX - width) / 2;
-	Client_Rect.right = Client_Rect.left + width;
-	Client_Rect.top = (MonitorY - height) / 2;
-	Client_Rect.bottom = Client_Rect.top + height;
-	if (full)
-	{
-		style = WS_POPUP | WS_VISIBLE;
-		AdjustWindowRect(&Client_Rect, style, false);
-		hWnd = CreateWindow(
-			window_name, window_name,
-			style,
-			0, 0, MonitorX, MonitorY,
-			NULL, NULL, hInstance, NULL);
-	}
-	else
-	{
-		style = WS_CAPTION | WS_MINIMIZEBOX | WS_SYSMENU | WS_VISIBLE;
-		AdjustWindowRect(&Client_Rect, style, false);
-		hWnd = CreateWindow(
-			window_name, window_name,
-			style,
-			Client_Rect.left, Client_Rect.top, Client_Rect.right - Client_Rect.left, Client_Rect.bottom - Client_Rect.top,
-			NULL, NULL, hInstance, NULL);
-	}
-}
-void GetMonitorParameters(int &x, int &y)
-{
-	HWND desktop;
-	RECT DESKRECT;
-	desktop = GetDesktopWindow();
-	GetWindowRect(desktop, &DESKRECT);
-	x = DESKRECT.right;
-	y = DESKRECT.bottom;
-	CloseHandle(desktop);
-}
-void SetVSync(bool sync)
-{
-	typedef BOOL(APIENTRY *PFNWGLSWAPINTERVALPROC)(int);
-	PFNWGLSWAPINTERVALPROC wglSwapIntervalEXT = 0;
-	const char *extensions = (char*)glGetString(GL_EXTENSIONS);
-	if (strstr(extensions, "WGL_EXT_swap_control"))
-	{
-		wglSwapIntervalEXT = (PFNWGLSWAPINTERVALPROC)wglGetProcAddress("wglSwapIntervalEXT");
-		if (wglSwapIntervalEXT)
-		{
-			wglSwapIntervalEXT(sync);
-		}
-	}
-}
-void Initialize()
-{
-	reconstruct_samples = 1;
-	if (test)
-	{
-		fft.Initialize(P);
-		//nums = new float[N]();
-		nums.Initialize(P);
-		reconstructed = new float[N]();
-		size_t half = N / 2;
-		amp = new float[half];
-		phase = new float[half];
-		float t = 0;
-		srand(time(0));
-		for (size_t i = 0; i < N; ++i, t += 2 * pi / (float)N) // Input signal
-		{
-			/*nums[i] = cos(30 * t) * 20;// +cos(300 * t) * 18;// +cos(25 * t / rad) * 75;
-			//nums[i] = sqrt(t) * 30;// +sin(34 * t / rad) * 30;
-			//nums[i] = 100 * ((i * 8 / N) % 2);
-			//nums[i] = rand() % 100;*/
-			nums.push_back(cos(440.5 * t) * 20/*+cos(460.1 * t) * 18/* +cos(25 * t / rad) * 75*/);
-			//nums.push_back(sqrt(t) * 30;// +sin(34 * t / rad) * 30);
-			//nums.push_back(100 * ((i * 8 / N) % 2));
-			//nums.push_back(rand() % 100);
-		}
-		result = new Complex<float>[N];
-		fft.Transform(nums, result);
-		for (size_t i = 0; i < half; ++i)
-		{
-			amp[i] = result[i].mod() * 2;
-			phase[i] = result[i].arg();
-		}
-		/*for (size_t i = 0; i < N; ++i)
-		{
-			reconstructed[i] += amp[0] * 0.5;
-			for (size_t j = 1; j < half; ++j)
-			{
-				reconstructed[i] += amp[j] * cos((double)i * j * 2 * pi / N + phase[j]);
-			}
-		}*/
-		//delete[] amp;
-		//delete[] phase;
-	}
-
-	GLubyte* __data = new GLubyte[width * N * 2]();
-	for (int i = 0; i < N / 2; ++i)
-	{
-		for (int j = 0; j < width; ++j)
-		{
-			//__data[(i * width + j) * 4 + 0] = 0;
-			__data[(i * width + j) * 4 + 1] = 255 * ((float)j / (float)width);
-			__data[(i * width + j) * 4 + 2] = 255 * ((float)j / (float)width);
-			__data[(i * width + j) * 4 + 3] = 255;
-		}
-	}
-	glGenTextures(1, &spectrogram);
-	glBindTexture(GL_TEXTURE_2D, spectrogram);
-	glTexImage2D(GL_TEXTURE_2D, 0, 4, width, N / 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, __data);
-	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	delete[] __data;
 }
 void DrawGL()
 {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glLoadIdentity();
+	float x = -(float)N / 2.f;
+	float scale = (float)width / (float)N;
+
+	// Draw the spectrogram
 	glEnable(GL_TEXTURE_2D);
-	glBindTexture(GL_TEXTURE_2D, spectrogram);
+	glBindTexture(GL_TEXTURE_2D, spectroID);
 	glColor3f(1, 1, 1);
 	glBegin(GL_QUADS);
-	glTexCoord2f(tex_x, 0); glVertex2f(-width / 2, -height / 2);
-	glTexCoord2f(tex_x - 1, 0); glVertex2f(width / 2, -height / 2);
-	glTexCoord2f(tex_x - 1, 1); glVertex2f(width / 2, height / 2);
-	glTexCoord2f(tex_x, 1); glVertex2f(-width / 2, height / 2);
+	glTexCoord2f(spectroOffsetX, 0); glVertex2f(-width / 2, -height / 2);
+	glTexCoord2f(spectroOffsetX - 1, 0); glVertex2f(width / 2, -height / 2);
+	glTexCoord2f(spectroOffsetX - 1, 1); glVertex2f(width / 2, height / 2);
+	glTexCoord2f(spectroOffsetX, 1); glVertex2f(-width / 2, height / 2);
 	glEnd();
 	glDisable(GL_TEXTURE_2D);
-	float x = -(float)N / 2.0;
-	float scale = (float)width / (float)N;
-	if (test)
+
+	// Draw the input
+	if (generated)
 	{
 		glColor3f(0, 1, 0);
 		glBegin(GL_LINE_STRIP);
-		for (size_t i = 0; i < N; ++i, x += 1)
+		for (size_t i = 0; i < N; ++i, x += scale)
 		{
-			glVertex2d(x * scale, nums[i]);
+			glVertex2d(x, genInput[i] - height / 5);
 		}
 		glEnd();
 	}
@@ -454,30 +293,40 @@ void DrawGL()
 		glBegin(GL_LINE_STRIP);
 		for (size_t i = 0; i < N; ++i, x += 1)
 		{
-			glVertex2d(x * scale, input[i] * 500 - height / 5);
+			glVertex2d(x * scale, capInput[i] * 500 - height / 5);
 		}
 		glEnd();
 	}
+
+	// Draw the frequency decomposition
 	x = 0.0;
 	glColor3f(0, 0.6, 1);
-	glBegin(GL_LINE_STRIP);
-	//glBegin(GL_LINES);
-	for (size_t i = 0; i < N / 2; ++i, x += 1.0 * scale_correction)
+	bool line_strip = true;
+	if(line_strip)
+		glBegin(GL_LINE_STRIP);
+	else
+		glBegin(GL_LINES);
+	for (size_t i = 0; i < N / 2; ++i, x += 1.0)
 	{
 		glVertex2d(x - width / 2, amp[i] * 100 + height / 5);
-		//glVertex2d(x - width / 2, height / 5);
+		if (!line_strip)
+			glVertex2d(x - width / 2, height / 5);
 	}
 	glEnd();
+
 	/*
+	// Draw the reconstructed signal
 	x = -(float)N / 2.0;
 	glColor3f(1, 0, 1);
 	glBegin(GL_LINE_STRIP);
-	for (size_t i = 0; i < N; ++i, x += 1.0)
+	for (size_t i = 0; i < N; ++i, x += scale)
 	{
-		glVertex2d(x * scale, reconstructed[i]);
+		glVertex2d(x, reconstructed[i]);
 	}
 	glEnd();
 	*/
+
+	// Draw guide lines every 50 units
 	glBegin(GL_LINES);
 	for (float i = -width / 2; i < width / 2; i += 50)
 	{
@@ -487,10 +336,12 @@ void DrawGL()
 	glVertex2d(440 - width / 2, height / 5 - 5);
 	glVertex2d(440 - width / 2, height / 5 - 25);
 	glEnd();
-	if (!test)
+
+	// Draw frequency text
+	if (!generated)
 	{
 		glEnable(GL_TEXTURE_2D);
-		unsigned char* freq = make_number_to_text((float)max_freq * (float)scale_correction);
+		unsigned char* freq = make_number_to_text((float)maxFrequency);
 		glScalef(1, -1, 1);
 		glColor3f(1, 1, 1);
 		draw_text(freq, -width / 2 + 50, -height / 2 + 50, 1);

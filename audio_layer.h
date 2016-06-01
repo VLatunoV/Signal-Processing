@@ -22,12 +22,13 @@ namespace AudioLayer
 	class AudioEndpoint;
 	class CaptureEndpoint;
 	class RenderEndpoint;
+	static bool initialized = false;
 
 	static IMMDeviceEnumerator* pIDeviceEnumerator = nullptr;
 	static IMMDeviceCollection* pIDeviceCollection = nullptr;
 	CaptureEndpoint* GetDefaultCaptureEndpoint();
 	RenderEndpoint* GetDefaultRenderEndpoint();
-	bool Initialize();
+	static bool Initialize();
 	void Cleanup();
 
 	class AudioEndpoint
@@ -68,6 +69,7 @@ namespace AudioLayer
 		~CaptureEndpoint();
 		void Initialize(UINT32);
 		void Capture(UINT32, BYTE*);
+		size_t GetBufferSize() const;
 	};
 
 	class RenderEndpoint : public AudioEndpoint

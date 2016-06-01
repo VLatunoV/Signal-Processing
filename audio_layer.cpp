@@ -5,11 +5,15 @@ namespace AudioLayer
 {
 	bool Initialize()
 	{
-		CoInitialize(0);
-		CoCreateInstance(
-			__uuidof(MMDeviceEnumerator), NULL,
-			CLSCTX_ALL, __uuidof(IMMDeviceEnumerator),
-			(void**)&pIDeviceEnumerator);
+		if (!initialized)
+		{
+			CoInitialize(0);
+			CoCreateInstance(
+				__uuidof(MMDeviceEnumerator), NULL,
+				CLSCTX_ALL, __uuidof(IMMDeviceEnumerator),
+				(void**)&pIDeviceEnumerator);
+			initialized = true;
+		}
 		return true;
 	}
 	void Cleanup()
@@ -24,6 +28,7 @@ namespace AudioLayer
 			pIDeviceEnumerator->Release();
 			pIDeviceEnumerator = nullptr;
 		}
+		initialized = false;
 	}
 	AudioEndpoint::~AudioEndpoint()
 	{
@@ -41,6 +46,8 @@ namespace AudioLayer
 	}
 	CaptureEndpoint* GetDefaultCaptureEndpoint()
 	{
+		if (!initialized)
+			Initialize();
 		if (pIDeviceEnumerator == nullptr)
 			return nullptr;
 		CaptureEndpoint* result = new CaptureEndpoint();
@@ -53,6 +60,8 @@ namespace AudioLayer
 	}
 	RenderEndpoint* GetDefaultRenderEndpoint()
 	{
+		if (!initialized)
+			Initialize();
 		if (pIDeviceEnumerator == nullptr)
 			return nullptr;
 		RenderEndpoint* result = new RenderEndpoint();
@@ -134,6 +143,10 @@ namespace AudioLayer
 			}
 
 		}
+	}
+	size_t CaptureEndpoint::GetBufferSize() const
+	{
+		return timeInterval * pWF->nAvgBytesPerSec / 1000;
 	}
 
 	RenderEndpoint::~RenderEndpoint()
